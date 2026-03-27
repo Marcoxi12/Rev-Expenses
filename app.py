@@ -194,7 +194,7 @@ with st.sidebar:
     for col in ["Well", "Period", "SubAcctNum"]:
         if col not in df.columns:
             df[col] = "Unknown"
-    df["Well"]      = df["Well"].fillna("Unknown").astype(str)
+    df["Well"]       = df["Well"].fillna("Unknown").astype(str)
     df["SubAcctNum"] = df["SubAcctNum"].fillna("Unknown").astype(str)
 
     st.markdown('<div class="sb-section">Filters</div>', unsafe_allow_html=True)
@@ -287,14 +287,14 @@ months_sorted = sorted(dff["Period"].dropna().astype(str).unique().tolist())
 last_m = months_sorted[-1] if months_sorted else None
 prev_m = months_sorted[-2] if len(months_sorted) >= 2 else None
 
-last_gross = summary.loc[summary["Period"] == last_m, "Gross_Revenue"].sum()  if (last_m and not summary.empty) else 0
-prev_gross = summary.loc[summary["Period"] == prev_m, "Gross_Revenue"].sum()  if (prev_m and not summary.empty) else 0
-last_net   = summary.loc[summary["Period"] == last_m, "Net_Revenue"].sum()    if (last_m and not summary.empty) else 0
-prev_net   = summary.loc[summary["Period"] == prev_m, "Net_Revenue"].sum()    if (prev_m and not summary.empty) else 0
+last_gross = summary.loc[summary["Period"] == last_m, "Gross_Revenue"].sum()    if (last_m and not summary.empty) else 0
+prev_gross = summary.loc[summary["Period"] == prev_m, "Gross_Revenue"].sum()    if (prev_m and not summary.empty) else 0
+last_net   = summary.loc[summary["Period"] == last_m, "Net_Revenue"].sum()      if (last_m and not summary.empty) else 0
+prev_net   = summary.loc[summary["Period"] == prev_m, "Net_Revenue"].sum()      if (prev_m and not summary.empty) else 0
 last_deds  = summary.loc[summary["Period"] == last_m, "Total_Deductions"].sum() if (last_m and not summary.empty) else 0
 ded_rate   = last_deds / last_gross * 100 if last_gross else 0
-total_gross= summary["Gross_Revenue"].sum() if not summary.empty else 0
-total_net  = summary["Net_Revenue"].sum()   if not summary.empty else 0
+total_gross = summary["Gross_Revenue"].sum() if not summary.empty else 0
+total_net   = summary["Net_Revenue"].sum()   if not summary.empty else 0
 
 # ── Expense buckets: LOE + Workover = OpEx  |  Capital = Capital  |  Leasehold separate ──
 def _exp_bucket_sum(es, bucket, period=None):
@@ -304,12 +304,12 @@ def _exp_bucket_sum(es, bucket, period=None):
     return es.loc[m, "Amount"].sum()
 
 # Latest month
-last_loe      = _exp_bucket_sum(exp_summary, "LOE",       last_m)
-last_workover = _exp_bucket_sum(exp_summary, "Workover",  last_m)
-last_capital  = _exp_bucket_sum(exp_summary, "Capital",   last_m)
-last_leasehold= _exp_bucket_sum(exp_summary, "Leasehold", last_m)
-last_opex     = last_loe + last_workover          # LOE + Workover
-last_exp      = last_opex + last_capital + last_leasehold   # everything
+last_loe       = _exp_bucket_sum(exp_summary, "LOE",       last_m)
+last_workover  = _exp_bucket_sum(exp_summary, "Workover",  last_m)
+last_capital   = _exp_bucket_sum(exp_summary, "Capital",   last_m)
+last_leasehold = _exp_bucket_sum(exp_summary, "Leasehold", last_m)
+last_opex      = last_loe + last_workover
+last_exp       = last_opex + last_capital + last_leasehold
 
 # Cumulative
 cum_loe       = _exp_bucket_sum(exp_summary, "LOE")
@@ -322,12 +322,12 @@ total_exp     = cum_opex + cum_capital + cum_leasehold
 # Derived P&L lines
 last_net_less_opex    = last_net - last_opex
 last_net_less_capital = last_net - last_capital
-last_net_income       = last_net - last_exp     # net rev minus ALL costs
+last_net_income       = last_net - last_exp
 
-cum_net_less_opex     = total_net - cum_opex
-cum_net_income        = total_net - total_exp
+cum_net_less_opex = total_net - cum_opex
+cum_net_income    = total_net - total_exp
 
-n_wells    = df["Well"].nunique()
+n_wells = df["Well"].nunique()
 
 wlbl = f"{len(selected_wells)} of {n_wells} wells" if selected_wells else f"All {dff['Well'].nunique()} wells"
 plbl = f"{month_range[0]} – {month_range[1]}" if month_range and month_range[0] != month_range[1] else (month_range[0] if month_range else "")
@@ -349,7 +349,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 ni_color  = "c-green" if last_net_income       >= 0 else "c-red"
-nlo_color = "c-green" if last_net_less_opex   >= 0 else "c-red"
+nlo_color = "c-green" if last_net_less_opex    >= 0 else "c-red"
 nlc_color = "c-green" if last_net_less_capital >= 0 else "c-red"
 
 st.markdown(f"""
@@ -429,28 +429,24 @@ with rev_tab:
                         marker=dict(size=6, color=C["net"], line=dict(color="#fff", width=1.5)))
         fig.update_layout(**bl(barmode="relative", height=380, yaxis=dict(tickprefix="$", tickformat=",.0f")))
         sax(fig)
-        fig.update_layout(**bl(barmode="relative", height=380, yaxis=dict(tickprefix="$", tickformat=",.0f")))
-sax(fig)
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-st.plotly_chart(fig, use_container_width=True)
-
-st.markdown("</div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
-    with st.expander("Data table"):
-        td = trend.copy()
-        for c in ["Oil","Gas","Plant","Deductions","Net"]:
-            td[c] = td[c].apply(lambda v: f"${v:,.0f}")
-        st.dataframe(td, use_container_width=True, hide_index=True)
+        with st.expander("Data table"):
+            td = trend.copy()
+            for c in ["Oil","Gas","Plant","Deductions","Net"]:
+                td[c] = td[c].apply(lambda v: f"${v:,.0f}")
+            st.dataframe(td, use_container_width=True, hide_index=True)
 
     # ── Tab 2: Commodity Mix ──────────────────────────────────────────────────
     with tab2:
         mix = (summary.groupby("Period").agg(Oil=("Oil_Gross","sum"), Gas=("Gas_Gross","sum"), Plant=("Plant_Gross","sum"))
                .reset_index().sort_values("Period"))
-        tot_o = summary["Oil_Gross"].sum()  if not summary.empty else 0
-        tot_g = summary["Gas_Gross"].sum()  if not summary.empty else 0
+        tot_o = summary["Oil_Gross"].sum()   if not summary.empty else 0
+        tot_g = summary["Gas_Gross"].sum()   if not summary.empty else 0
         tot_p = summary["Plant_Gross"].sum() if not summary.empty else 0
         L, R  = st.columns([3, 2], gap="medium")
-    with L:
+        with L:
             st.markdown('<div class="panel"><div class="panel-title">Monthly Revenue Stack</div><div class="panel-sub">Gross by commodity per period</div>', unsafe_allow_html=True)
             f2 = go.Figure()
             f2.add_bar(x=mix["Period"], y=mix["Oil"],   name="Oil",       marker_color=C["oil"],   marker_line_width=0)
@@ -497,8 +493,8 @@ st.markdown("</div>", unsafe_allow_html=True)
         bases, bvals = [], []
         running = gross
         for idx in range(len(labels)):
-            if idx == 0:          bases.append(0);       bvals.append(gross)
-            elif idx == len(labels)-1: bases.append(0);  bvals.append(net)
+            if idx == 0:               bases.append(0);      bvals.append(gross)
+            elif idx == len(labels)-1: bases.append(0);      bvals.append(net)
             else:
                 dv = di[idx-1][1]; bases.append(running - dv); bvals.append(dv); running -= dv
         dvals = [gross] + [-i[1] for i in di] + [net]
@@ -728,8 +724,8 @@ with exp_tab:
             ctrl3, body3  = st.columns([1, 4], gap="medium")
             with ctrl3:
                 st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
-                sel_well   = st.selectbox("Well", all_exp_wells, key="e3w")
-                e3_period  = st.selectbox("Period", ["All periods"] + (months_sorted[::-1] if months_sorted else []), key="e3p")
+                sel_well  = st.selectbox("Well", all_exp_wells, key="e3w")
+                e3_period = st.selectbox("Period", ["All periods"] + (months_sorted[::-1] if months_sorted else []), key="e3p")
 
             well_exp = dff[(dff["Bucket"] != "Revenue") & (dff["Well"] == sel_well)].copy()
             if e3_period != "All periods":
@@ -743,7 +739,6 @@ with exp_tab:
                     wb_tots = well_exp.groupby("Bucket")["AmountAdj"].sum().reset_index()
                     wb_tot  = wb_tots["AmountAdj"].sum()
 
-                    # KPI row for the well
                     loe_w  = wb_tots.loc[wb_tots["Bucket"]=="LOE",       "AmountAdj"].sum()
                     lh_w   = wb_tots.loc[wb_tots["Bucket"]=="Leasehold", "AmountAdj"].sum()
                     cap_w  = wb_tots.loc[wb_tots["Bucket"]=="Capital",   "AmountAdj"].sum()
@@ -810,9 +805,9 @@ with exp_tab:
             ctrl4, body4 = st.columns([1, 4], gap="medium")
             with ctrl4:
                 st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
-                e4_top   = st.slider("Top N wells", 5, 50, 15, key="e4n")
-                e4_period= st.selectbox("Period", ["All periods"] + (months_sorted[::-1] if months_sorted else []), key="e4p")
-                e4_bucket= st.selectbox("Bucket", ["All buckets","LOE","Leasehold","Capital","Workover"], key="e4b")
+                e4_top    = st.slider("Top N wells", 5, 50, 15, key="e4n")
+                e4_period = st.selectbox("Period", ["All periods"] + (months_sorted[::-1] if months_sorted else []), key="e4p")
+                e4_bucket = st.selectbox("Bucket", ["All buckets","LOE","Leasehold","Capital","Workover"], key="e4b")
 
             e4_df = exp_summary.copy()
             if e4_period != "All periods":
@@ -889,11 +884,11 @@ with pl_tab:
     pl = pd.DataFrame({"Period": all_periods})
     pl = pl.merge(rev_by_period, on="Period", how="left").fillna(0)
     pl = pl.merge(exp_pivot[["Period","LOE","Leasehold","Capital","Workover"]], on="Period", how="left").fillna(0)
-    pl["OpEx"]           = pl["LOE"] + pl["Workover"]
-    pl["Total_Exp"]      = pl["LOE"] + pl["Workover"] + pl["Capital"] + pl["Leasehold"]
-    pl["Net_Less_OpEx"]  = pl["Net_Rev"] - pl["OpEx"]
-    pl["Net_Less_Cap"]   = pl["Net_Rev"] - pl["Capital"]
-    pl["Net_Income"]     = pl["Net_Rev"] - pl["Total_Exp"]
+    pl["OpEx"]          = pl["LOE"] + pl["Workover"]
+    pl["Total_Exp"]     = pl["LOE"] + pl["Workover"] + pl["Capital"] + pl["Leasehold"]
+    pl["Net_Less_OpEx"] = pl["Net_Rev"] - pl["OpEx"]
+    pl["Net_Less_Cap"]  = pl["Net_Rev"] - pl["Capital"]
+    pl["Net_Income"]    = pl["Net_Rev"] - pl["Total_Exp"]
     pl = pl.sort_values("Period")
 
     # ── P&L Tab 1: Monthly P&L ────────────────────────────────────────────────
@@ -901,11 +896,11 @@ with pl_tab:
         st.markdown('<div class="panel"><div class="panel-title">Monthly P&L — Revenue vs Expenses</div><div class="panel-sub">Net revenue · OpEx · Capital · Net income overlay</div>', unsafe_allow_html=True)
 
         fp_main = go.Figure()
-        fp_main.add_bar(x=pl["Period"], y=pl["Net_Rev"],  name="Net Revenue",
+        fp_main.add_bar(x=pl["Period"], y=pl["Net_Rev"],    name="Net Revenue",
                         marker_color=C["gas"], marker_line_width=0)
-        fp_main.add_bar(x=pl["Period"], y=-pl["OpEx"],    name="OpEx (LOE + Workover)",
+        fp_main.add_bar(x=pl["Period"], y=-pl["OpEx"],      name="OpEx (LOE + Workover)",
                         marker_color=C["loe"], marker_line_width=0)
-        fp_main.add_bar(x=pl["Period"], y=-pl["Capital"], name="Capital",
+        fp_main.add_bar(x=pl["Period"], y=-pl["Capital"],   name="Capital",
                         marker_color=C["capital"], marker_line_width=0)
         fp_main.add_bar(x=pl["Period"], y=-pl["Leasehold"], name="Leasehold",
                         marker_color=C["leasehold"], marker_line_width=0)
@@ -1069,14 +1064,14 @@ with pl_tab:
             if wf_row is None:
                 st.info("No data for selected period.")
             else:
-                gross    = wf_row["Gross"]
-                rev_deds = wf_row["Deductions"]
-                net_rev  = wf_row["Net_Rev"]
-                loe      = wf_row["LOE"]
-                workover = wf_row["Workover"]
-                leasehold= wf_row["Leasehold"]
-                capital  = wf_row["Capital"]
-                net_inc  = wf_row["Net_Income"]
+                gross     = wf_row["Gross"]
+                rev_deds  = wf_row["Deductions"]
+                net_rev   = wf_row["Net_Rev"]
+                loe       = wf_row["LOE"]
+                workover  = wf_row["Workover"]
+                leasehold = wf_row["Leasehold"]
+                capital   = wf_row["Capital"]
+                net_inc   = wf_row["Net_Income"]
 
                 wf_labels = ["Gross Revenue","Rev Deductions","Net Revenue",
                              "LOE","Workover","Leasehold","Capital","Net Income"]
@@ -1094,7 +1089,6 @@ with pl_tab:
                         wf_bars.append(abs(val) if lbl != "Net Income" else val)
                         running = val
                     else:
-                        # deduction — draw from current running down
                         wf_bases.append(running + val)
                         wf_bars.append(-val)
                         running += val
