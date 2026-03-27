@@ -436,7 +436,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
-    with st.expander("Data table"):
+        with st.expander("Data table"):
         td = trend.copy()
         for c in ["Oil","Gas","Plant","Deductions","Net"]:
             td[c] = td[c].apply(lambda v: f"${v:,.0f}")
