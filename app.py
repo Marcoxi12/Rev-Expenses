@@ -431,7 +431,7 @@ with rev_tab:
         sax(fig)
         st.plotly_chart(fw_bot, use_container_width=True, key="fw_bot_chart_1")
 st.plotly_chart(fw_bot, use_container_width=True, key="fw_bot_chart_2")
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
         with st.expander("Data table"):
             td = trend.copy()
             for c in ["Oil","Gas","Plant","Deductions","Net"]:
