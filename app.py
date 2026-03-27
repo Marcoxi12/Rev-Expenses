@@ -436,7 +436,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
-        with st.expander("Data table"):
+    with st.expander("Data table"):
         td = trend.copy()
         for c in ["Oil","Gas","Plant","Deductions","Net"]:
             td[c] = td[c].apply(lambda v: f"${v:,.0f}")
@@ -450,7 +450,7 @@ st.markdown("</div>", unsafe_allow_html=True)
         tot_g = summary["Gas_Gross"].sum()  if not summary.empty else 0
         tot_p = summary["Plant_Gross"].sum() if not summary.empty else 0
         L, R  = st.columns([3, 2], gap="medium")
-        with L:
+    with L:
             st.markdown('<div class="panel"><div class="panel-title">Monthly Revenue Stack</div><div class="panel-sub">Gross by commodity per period</div>', unsafe_allow_html=True)
             f2 = go.Figure()
             f2.add_bar(x=mix["Period"], y=mix["Oil"],   name="Oil",       marker_color=C["oil"],   marker_line_width=0)
