@@ -296,8 +296,37 @@ ded_rate   = last_deds / last_gross * 100 if last_gross else 0
 total_gross= summary["Gross_Revenue"].sum() if not summary.empty else 0
 total_net  = summary["Net_Revenue"].sum()   if not summary.empty else 0
 
-last_exp   = exp_summary.loc[exp_summary["Period"] == last_m, "Amount"].sum() if (last_m and not exp_summary.empty) else 0
-total_exp  = exp_summary["Amount"].sum() if not exp_summary.empty else 0
+# ── Expense buckets: LOE + Workover = OpEx  |  Capital = Capital  |  Leasehold separate ──
+def _exp_bucket_sum(es, bucket, period=None):
+    if es is None or es.empty: return 0
+    m = es["Bucket"] == bucket
+    if period: m = m & (es["Period"] == period)
+    return es.loc[m, "Amount"].sum()
+
+# Latest month
+last_loe      = _exp_bucket_sum(exp_summary, "LOE",       last_m)
+last_workover = _exp_bucket_sum(exp_summary, "Workover",  last_m)
+last_capital  = _exp_bucket_sum(exp_summary, "Capital",   last_m)
+last_leasehold= _exp_bucket_sum(exp_summary, "Leasehold", last_m)
+last_opex     = last_loe + last_workover          # LOE + Workover
+last_exp      = last_opex + last_capital + last_leasehold   # everything
+
+# Cumulative
+cum_loe       = _exp_bucket_sum(exp_summary, "LOE")
+cum_workover  = _exp_bucket_sum(exp_summary, "Workover")
+cum_capital   = _exp_bucket_sum(exp_summary, "Capital")
+cum_leasehold = _exp_bucket_sum(exp_summary, "Leasehold")
+cum_opex      = cum_loe + cum_workover
+total_exp     = cum_opex + cum_capital + cum_leasehold
+
+# Derived P&L lines
+last_net_less_opex    = last_net - last_opex
+last_net_less_capital = last_net - last_capital
+last_net_income       = last_net - last_exp     # net rev minus ALL costs
+
+cum_net_less_opex     = total_net - cum_opex
+cum_net_income        = total_net - total_exp
+
 n_wells    = df["Well"].nunique()
 
 wlbl = f"{len(selected_wells)} of {n_wells} wells" if selected_wells else f"All {dff['Well'].nunique()} wells"
@@ -319,6 +348,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+ni_color  = "c-green" if last_net_income       >= 0 else "c-red"
+nlo_color = "c-green" if last_net_less_opex   >= 0 else "c-red"
+nlc_color = "c-green" if last_net_less_capital >= 0 else "c-red"
+
 st.markdown(f"""
 <div class="kpi-strip">
   <div class="kpi-item c-blue">
@@ -331,15 +364,20 @@ st.markdown(f"""
     <div class="kpi-val">{fmt(last_net)}</div>
     {delta_html(last_net, prev_net, prev_m or "")}
   </div>
-  <div class="kpi-item c-red">
-    <div class="kpi-lbl">Total Expenses ({last_m or "—"})</div>
-    <div class="kpi-val">{fmt(last_exp)}</div>
-    <span class="kpi-delta neu">operating costs</span>
+  <div class="kpi-item {nlo_color}">
+    <div class="kpi-lbl">Net Rev Less OpEx ({last_m or "—"})</div>
+    <div class="kpi-val">{fmt(last_net_less_opex)}</div>
+    <span class="kpi-delta neu">LOE + Workover: {fmt(last_opex)}</span>
   </div>
-  <div class="kpi-item c-teal">
+  <div class="kpi-item {nlc_color}">
+    <div class="kpi-lbl">Net Rev Less Capital ({last_m or "—"})</div>
+    <div class="kpi-val">{fmt(last_net_less_capital)}</div>
+    <span class="kpi-delta neu">Capital: {fmt(last_capital)}</span>
+  </div>
+  <div class="kpi-item {ni_color}">
     <div class="kpi-lbl">Net Income ({last_m or "—"})</div>
-    <div class="kpi-val">{fmt(last_net - last_exp)}</div>
-    <span class="kpi-delta neu">net rev minus opex</span>
+    <div class="kpi-val">{fmt(last_net_income)}</div>
+    <span class="kpi-delta neu">All costs: {fmt(last_exp)}</span>
   </div>
   <div class="kpi-item c-amber">
     <div class="kpi-lbl">Deduction Rate</div>
@@ -347,13 +385,13 @@ st.markdown(f"""
     <span class="kpi-delta neu">of gross revenue</span>
   </div>
   <div class="kpi-item c-purple">
-    <div class="kpi-lbl">Cumul. Net Revenue</div>
-    <div class="kpi-val">{fmt(total_net)}</div>
+    <div class="kpi-lbl">Cumul. Net Less OpEx</div>
+    <div class="kpi-val">{fmt(cum_net_less_opex)}</div>
     <span class="kpi-delta neu">{len(months_sorted)} period(s)</span>
   </div>
-  <div class="kpi-item c-red">
-    <div class="kpi-lbl">Cumul. Expenses</div>
-    <div class="kpi-val">{fmt(total_exp)}</div>
+  <div class="kpi-item c-teal">
+    <div class="kpi-lbl">Cumul. Net Income</div>
+    <div class="kpi-val">{fmt(cum_net_income)}</div>
     <span class="kpi-delta neu">{len(months_sorted)} period(s)</span>
   </div>
 </div>
@@ -362,7 +400,7 @@ st.markdown(f"""
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODULE TABS
 # ═══════════════════════════════════════════════════════════════════════════════
-rev_tab, exp_tab = st.tabs(["Revenue", "Expenses"])
+rev_tab, exp_tab = st.tabs(["📈  Revenue", "💰  Expenses"])
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # REVENUE MODULE
