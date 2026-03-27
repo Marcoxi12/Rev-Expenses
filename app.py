@@ -429,8 +429,12 @@ with rev_tab:
                         marker=dict(size=6, color=C["net"], line=dict(color="#fff", width=1.5)))
         fig.update_layout(**bl(barmode="relative", height=380, yaxis=dict(tickprefix="$", tickformat=",.0f")))
         sax(fig)
-        st.plotly_chart(fw_bot, use_container_width=True, key="fw_bot_chart_1")
-st.plotly_chart(fw_bot, use_container_width=True, key="fw_bot_chart_2")
+        fig.update_layout(**bl(barmode="relative", height=380, yaxis=dict(tickprefix="$", tickformat=",.0f")))
+sax(fig)
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
     with st.expander("Data table"):
         td = trend.copy()
