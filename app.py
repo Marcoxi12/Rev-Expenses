@@ -400,7 +400,7 @@ st.markdown(f"""
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODULE TABS
 # ═══════════════════════════════════════════════════════════════════════════════
-rev_tab, exp_tab = st.tabs(["Revenue", "Expenses"])
+rev_tab, exp_tab, pl_tab = st.tabs(["Revenue", "Expenses", "P&L Summary"])
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # REVENUE MODULE
@@ -852,3 +852,272 @@ with exp_tab:
                         for col in tbl4.columns[1:]:
                             tbl4[col] = tbl4[col].apply(lambda v: f"${v:,.0f}" if v != 0 else "—")
                         st.dataframe(tbl4, use_container_width=True, hide_index=True)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# P&L SUMMARY MODULE
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+with pl_tab:
+    pltab1, pltab2, pltab3 = st.tabs(["Monthly P&L", "Well P&L", "P&L Waterfall"])
+
+    # ── Build unified monthly P&L frame ──────────────────────────────────────
+    rev_by_period = (
+        summary.groupby("Period")
+        .agg(Gross=("Gross_Revenue","sum"), Net_Rev=("Net_Revenue","sum"),
+             Deductions=("Total_Deductions","sum"))
+        .reset_index()
+    ) if not summary.empty else pd.DataFrame(columns=["Period","Gross","Net_Rev","Deductions"])
+
+    exp_pivot = (
+        exp_summary.pivot_table(index="Period", columns="Bucket", values="Amount", aggfunc="sum", fill_value=0)
+        .reset_index()
+    ) if not exp_summary.empty else pd.DataFrame(columns=["Period"])
+
+    for bk in ["LOE","Leasehold","Capital","Workover"]:
+        if bk not in exp_pivot.columns:
+            exp_pivot[bk] = 0.0
+
+    all_periods = sorted(set(
+        list(rev_by_period["Period"].tolist() if not rev_by_period.empty else []) +
+        list(exp_pivot["Period"].tolist()     if not exp_pivot.empty     else [])
+    ))
+
+    pl = pd.DataFrame({"Period": all_periods})
+    pl = pl.merge(rev_by_period, on="Period", how="left").fillna(0)
+    pl = pl.merge(exp_pivot[["Period","LOE","Leasehold","Capital","Workover"]], on="Period", how="left").fillna(0)
+    pl["OpEx"]           = pl["LOE"] + pl["Workover"]
+    pl["Total_Exp"]      = pl["LOE"] + pl["Workover"] + pl["Capital"] + pl["Leasehold"]
+    pl["Net_Less_OpEx"]  = pl["Net_Rev"] - pl["OpEx"]
+    pl["Net_Less_Cap"]   = pl["Net_Rev"] - pl["Capital"]
+    pl["Net_Income"]     = pl["Net_Rev"] - pl["Total_Exp"]
+    pl = pl.sort_values("Period")
+
+    # ── P&L Tab 1: Monthly P&L ────────────────────────────────────────────────
+    with pltab1:
+        st.markdown('<div class="panel"><div class="panel-title">Monthly P&L — Revenue vs Expenses</div><div class="panel-sub">Net revenue · OpEx · Capital · Net income overlay</div>', unsafe_allow_html=True)
+
+        fp_main = go.Figure()
+        fp_main.add_bar(x=pl["Period"], y=pl["Net_Rev"],  name="Net Revenue",
+                        marker_color=C["gas"], marker_line_width=0)
+        fp_main.add_bar(x=pl["Period"], y=-pl["OpEx"],    name="OpEx (LOE + Workover)",
+                        marker_color=C["loe"], marker_line_width=0)
+        fp_main.add_bar(x=pl["Period"], y=-pl["Capital"], name="Capital",
+                        marker_color=C["capital"], marker_line_width=0)
+        fp_main.add_bar(x=pl["Period"], y=-pl["Leasehold"], name="Leasehold",
+                        marker_color=C["leasehold"], marker_line_width=0)
+        fp_main.add_scatter(
+            x=pl["Period"], y=pl["Net_Income"], name="Net Income",
+            line=dict(color="#111928", width=2.5), mode="lines+markers",
+            marker=dict(size=7, color=pl["Net_Income"].apply(lambda v: "#0e9f6e" if v >= 0 else "#e02424"),
+                        line=dict(color="#fff", width=1.5)),
+        )
+        fp_main.update_layout(**bl(barmode="relative", height=420,
+                                   yaxis=dict(tickprefix="$", tickformat=",.0f")))
+        sax(fp_main)
+        st.plotly_chart(fp_main, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Net Less OpEx vs Net Less Capital side by side
+        L_pl, R_pl = st.columns(2, gap="medium")
+        with L_pl:
+            st.markdown('<div class="panel green"><div class="panel-title">Net Revenue Less OpEx</div><div class="panel-sub">Net rev minus LOE + Workover per period</div>', unsafe_allow_html=True)
+            fp2 = go.Figure()
+            fp2.add_bar(x=pl["Period"], y=pl["Net_Less_OpEx"],
+                        marker_color=pl["Net_Less_OpEx"].apply(lambda v: C["gas"] if v >= 0 else C["ded"]),
+                        marker_line_width=0,
+                        text=pl["Net_Less_OpEx"].apply(fmt), textposition="outside",
+                        textfont=dict(family=MF, size=9),
+                        hovertemplate="%{x}: $%{y:,.0f}<extra></extra>",
+                        showlegend=False)
+            fp2.update_layout(**bl(height=280, yaxis=dict(tickprefix="$", tickformat=",.0f"),
+                                   margin=dict(t=8, b=32, l=12, r=12)))
+            sax(fp2)
+            st.plotly_chart(fp2, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with R_pl:
+            st.markdown('<div class="panel teal"><div class="panel-title">Net Revenue Less Capital</div><div class="panel-sub">Net rev minus Capital spend per period</div>', unsafe_allow_html=True)
+            fp3 = go.Figure()
+            fp3.add_bar(x=pl["Period"], y=pl["Net_Less_Cap"],
+                        marker_color=pl["Net_Less_Cap"].apply(lambda v: C["gas"] if v >= 0 else C["ded"]),
+                        marker_line_width=0,
+                        text=pl["Net_Less_Cap"].apply(fmt), textposition="outside",
+                        textfont=dict(family=MF, size=9),
+                        hovertemplate="%{x}: $%{y:,.0f}<extra></extra>",
+                        showlegend=False)
+            fp3.update_layout(**bl(height=280, yaxis=dict(tickprefix="$", tickformat=",.0f"),
+                                   margin=dict(t=8, b=32, l=12, r=12)))
+            sax(fp3)
+            st.plotly_chart(fp3, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with st.expander("Full monthly P&L table"):
+            tbl_pl = pl.copy()
+            for col in ["Gross","Net_Rev","Deductions","LOE","Workover","OpEx","Leasehold","Capital",
+                        "Total_Exp","Net_Less_OpEx","Net_Less_Cap","Net_Income"]:
+                tbl_pl[col] = tbl_pl[col].apply(lambda v: f"${v:,.0f}")
+            tbl_pl = tbl_pl.rename(columns={
+                "Gross":"Gross Rev","Net_Rev":"Net Rev","Deductions":"Rev Deductions",
+                "OpEx":"OpEx (LOE+WO)","Total_Exp":"Total Exp",
+                "Net_Less_OpEx":"Net Less OpEx","Net_Less_Cap":"Net Less Capital","Net_Income":"Net Income",
+            })
+            st.dataframe(tbl_pl, use_container_width=True, hide_index=True)
+
+    # ── P&L Tab 2: Well P&L ───────────────────────────────────────────────────
+    with pltab2:
+        ctrl_w, body_w = st.columns([1, 4], gap="medium")
+        with ctrl_w:
+            st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+            pw_period = st.selectbox("Period", ["All periods"] + (months_sorted[::-1] if months_sorted else []), key="pw_p")
+            pw_metric = st.radio("View", ["Net Income","Net Less OpEx","Net Less Capital"], key="pw_m")
+            pw_top    = st.slider("Top N", 5, 60, 20, key="pw_n")
+
+        # Build per-well P&L
+        rev_w = (
+            summary.groupby("Well")
+            .apply(lambda g: g[g["Period"] == pw_period] if pw_period != "All periods" else g, include_groups=False)
+            .reset_index(level=0).reset_index(drop=True)
+            .groupby("Well")
+            .agg(Net_Rev=("Net_Revenue","sum"))
+            .reset_index()
+        ) if not summary.empty else pd.DataFrame(columns=["Well","Net_Rev"])
+
+        exp_w_raw = exp_summary.copy()
+        if pw_period != "All periods":
+            exp_w_raw = exp_w_raw[exp_w_raw["Period"] == pw_period]
+        exp_w = (
+            exp_w_raw.pivot_table(index="Well", columns="Bucket", values="Amount", aggfunc="sum", fill_value=0)
+            .reset_index()
+        ) if not exp_w_raw.empty else pd.DataFrame(columns=["Well"])
+        for bk in ["LOE","Leasehold","Capital","Workover"]:
+            if bk not in exp_w.columns: exp_w[bk] = 0.0
+
+        well_pl = rev_w.merge(exp_w, on="Well", how="outer").fillna(0)
+        well_pl["OpEx"]          = well_pl["LOE"] + well_pl["Workover"]
+        well_pl["Total_Exp"]     = well_pl["LOE"] + well_pl["Workover"] + well_pl["Capital"] + well_pl["Leasehold"]
+        well_pl["Net_Income"]    = well_pl["Net_Rev"] - well_pl["Total_Exp"]
+        well_pl["Net_Less_OpEx"] = well_pl["Net_Rev"] - well_pl["OpEx"]
+        well_pl["Net_Less_Cap"]  = well_pl["Net_Rev"] - well_pl["Capital"]
+
+        metric_col = {"Net Income":"Net_Income","Net Less OpEx":"Net_Less_OpEx","Net Less Capital":"Net_Less_Cap"}[pw_metric]
+        top_wells  = well_pl.sort_values(metric_col, ascending=False).head(pw_top)
+        bot_wells  = well_pl.sort_values(metric_col, ascending=True).head(pw_top)
+
+        with body_w:
+            TL, TR = st.columns(2, gap="medium")
+            with TL:
+                st.markdown(f'<div class="panel green"><div class="panel-title">Top {pw_top} Wells — {pw_metric}</div><div class="panel-sub">{pw_period}</div>', unsafe_allow_html=True)
+                colors_top = top_wells[metric_col].apply(lambda v: C["gas"] if v >= 0 else C["ded"])
+                fw_top = go.Figure(go.Bar(
+                    x=top_wells[metric_col], y=top_wells["Well"], orientation="h",
+                    marker_color=colors_top, marker_line_width=0,
+                    text=top_wells[metric_col].apply(fmt), textposition="outside",
+                    textfont=dict(family=MF, size=10),
+                    hovertemplate="%{y}: $%{x:,.0f}<extra></extra>",
+                ))
+                fw_top.update_layout(**bl(height=max(340, pw_top*28),
+                                         xaxis=dict(tickprefix="$", tickformat=",.0f"),
+                                         yaxis=dict(autorange="reversed"),
+                                         margin=dict(t=8, b=32, l=220, r=90)))
+                sax(fw_top)
+                st.plotly_chart(fw_top, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with TR:
+                st.markdown(f'<div class="panel red"><div class="panel-title">Bottom {pw_top} Wells — {pw_metric}</div><div class="panel-sub">{pw_period}</div>', unsafe_allow_html=True)
+                colors_bot = bot_wells[metric_col].apply(lambda v: C["gas"] if v >= 0 else C["ded"])
+                fw_bot = go.Figure(go.Bar(
+                    x=bot_wells[metric_col], y=bot_wells["Well"], orientation="h",
+                    marker_color=colors_bot, marker_line_width=0,
+                    text=bot_wells[metric_col].apply(fmt), textposition="outside",
+                    textfont=dict(family=MF, size=10),
+                    hovertemplate="%{y}: $%{x:,.0f}<extra></extra>",
+                ))
+                fw_bot.update_layout(**bl(height=max(340, pw_top*28),
+                                         xaxis=dict(tickprefix="$", tickformat=",.0f"),
+                                         yaxis=dict(autorange="reversed"),
+                                         margin=dict(t=8, b=32, l=220, r=90)))
+                sax(fw_bot)
+                st.plotly_chart(fw_bot, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+            with st.expander("Full well P&L table"):
+                tbl_w = well_pl.sort_values("Net_Income", ascending=False).copy()
+                for col in ["Net_Rev","LOE","Workover","OpEx","Leasehold","Capital","Total_Exp",
+                            "Net_Income","Net_Less_OpEx","Net_Less_Cap"]:
+                    tbl_w[col] = tbl_w[col].apply(lambda v: f"${v:,.0f}")
+                tbl_w = tbl_w.rename(columns={
+                    "Net_Rev":"Net Rev","OpEx":"OpEx (LOE+WO)","Total_Exp":"Total Exp",
+                    "Net_Income":"Net Income","Net_Less_OpEx":"Net Less OpEx","Net_Less_Cap":"Net Less Capital",
+                })
+                st.dataframe(tbl_w, use_container_width=True, hide_index=True)
+
+    # ── P&L Tab 3: P&L Waterfall ──────────────────────────────────────────────
+    with pltab3:
+        ctrl_wf, body_wf = st.columns([1, 4], gap="medium")
+        with ctrl_wf:
+            st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+            wf_period = st.selectbox("Period", months_sorted[::-1] if months_sorted else ["—"], key="wf_p")
+
+        wf_row = pl[pl["Period"] == wf_period].iloc[0] if not pl.empty and wf_period in pl["Period"].values else None
+
+        with body_wf:
+            if wf_row is None:
+                st.info("No data for selected period.")
+            else:
+                gross    = wf_row["Gross"]
+                rev_deds = wf_row["Deductions"]
+                net_rev  = wf_row["Net_Rev"]
+                loe      = wf_row["LOE"]
+                workover = wf_row["Workover"]
+                leasehold= wf_row["Leasehold"]
+                capital  = wf_row["Capital"]
+                net_inc  = wf_row["Net_Income"]
+
+                wf_labels = ["Gross Revenue","Rev Deductions","Net Revenue",
+                             "LOE","Workover","Leasehold","Capital","Net Income"]
+                wf_vals   = [gross, -rev_deds, net_rev, -loe, -workover, -leasehold, -capital, net_inc]
+                wf_colors = ["#1a56db","#e02424","#0e9f6e",
+                             C["loe"], C["workover"], C["leasehold"], C["capital"],
+                             "#0e9f6e" if net_inc >= 0 else "#e02424"]
+
+                # Waterfall base calculation
+                wf_bases, wf_bars = [], []
+                running = 0
+                for i, (lbl, val) in enumerate(zip(wf_labels, wf_vals)):
+                    if lbl in ("Gross Revenue", "Net Revenue", "Net Income"):
+                        wf_bases.append(0)
+                        wf_bars.append(abs(val) if lbl != "Net Income" else val)
+                        running = val
+                    else:
+                        # deduction — draw from current running down
+                        wf_bases.append(running + val)
+                        wf_bars.append(-val)
+                        running += val
+
+                st.markdown(f'<div class="panel"><div class="panel-title">P&L Waterfall — {wf_period}</div><div class="panel-sub">Gross revenue → deductions → net rev → opex → capital → net income</div>', unsafe_allow_html=True)
+                fwf = go.Figure()
+                fwf.add_bar(x=wf_labels, y=wf_bases, marker_color="rgba(0,0,0,0)", showlegend=False, hoverinfo="skip")
+                fwf.add_bar(
+                    x=wf_labels, y=wf_bars, marker_color=wf_colors, marker_line_width=0,
+                    text=[fmt(v) for v in wf_vals], textposition="outside",
+                    textfont=dict(family=MF, size=10, color="#374151"),
+                    showlegend=False,
+                    hovertemplate="%{x}: $%{y:,.0f}<extra></extra>",
+                )
+                fwf.update_layout(**bl(barmode="stack", height=440,
+                                       yaxis=dict(tickprefix="$", tickformat=",.0f")))
+                sax(fwf)
+                st.plotly_chart(fwf, use_container_width=True)
+                st.markdown("</div>", unsafe_allow_html=True)
+
+                # Summary row
+                ni_cls = "green" if net_inc >= 0 else "red"
+                st.markdown(f"""
+                <div class="sum-row">
+                  <div class="sum-cell"><div class="sum-lbl">Gross Revenue</div><div class="sum-val">{fmt(gross)}</div></div>
+                  <div class="sum-cell amber"><div class="sum-lbl">Rev Deductions</div><div class="sum-val">{fmt(rev_deds)}</div><div class="sum-note">{f"{rev_deds/gross*100:.1f}% of gross" if gross else "—"}</div></div>
+                  <div class="sum-cell green"><div class="sum-lbl">Net Revenue</div><div class="sum-val">{fmt(net_rev)}</div></div>
+                  <div class="sum-cell"><div class="sum-lbl">OpEx (LOE + WO)</div><div class="sum-val">{fmt(loe+workover)}</div></div>
+                  <div class="sum-cell purple"><div class="sum-lbl">Capital</div><div class="sum-val">{fmt(capital)}</div></div>
+                  <div class="sum-cell {ni_cls}"><div class="sum-lbl">Net Income</div><div class="sum-val">{fmt(net_inc)}</div><div class="sum-note">{f"{net_inc/gross*100:.1f}% margin" if gross else "—"}</div></div>
+                </div>""", unsafe_allow_html=True)
