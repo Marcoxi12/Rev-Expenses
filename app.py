@@ -429,7 +429,7 @@ with rev_tab:
                         marker=dict(size=6, color=C["net"], line=dict(color="#fff", width=1.5)))
         fig.update_layout(**bl(barmode="relative", height=380, yaxis=dict(tickprefix="$", tickformat=",.0f")))
         sax(fig)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig,    use_container_width=True, key="rev_trend")
         st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("Data table"):
@@ -454,7 +454,7 @@ with rev_tab:
             f2.add_bar(x=mix["Period"], y=mix["Plant"], name="Plant/NGL", marker_color=C["plant"], marker_line_width=0)
             f2.update_layout(**bl(barmode="stack", height=340, yaxis=dict(tickprefix="$", tickformat=",.0f")))
             sax(f2)
-            st.plotly_chart(f2, use_container_width=True)
+            st.plotly_chart(f2,     use_container_width=True, key="mix_stack")
             st.markdown("</div>", unsafe_allow_html=True)
         with R:
             st.markdown('<div class="panel"><div class="panel-title">Cumulative Mix</div><div class="panel-sub">All selected periods</div>', unsafe_allow_html=True)
@@ -467,7 +467,7 @@ with rev_tab:
             f3.update_layout(height=340, showlegend=False, paper_bgcolor=BG, margin=dict(t=10,b=10,l=20,r=20),
                 annotations=[dict(text=f"<b>{fmt(tot_o+tot_g+tot_p)}</b>", x=0.5, y=0.5, showarrow=False,
                                   font=dict(family=PF, size=18, color="#111928"))])
-            st.plotly_chart(f3, use_container_width=True)
+            st.plotly_chart(f3,     use_container_width=True, key="mix_pie")
             st.markdown("</div>", unsafe_allow_html=True)
 
     # ── Tab 3: Deduction Bridge ───────────────────────────────────────────────
@@ -508,7 +508,7 @@ with rev_tab:
                        hovertemplate="%{x}: $%{y:,.0f}<extra></extra>")
             f4.update_layout(**bl(barmode="stack", height=400, yaxis=dict(tickprefix="$", tickformat=",.0f")))
             sax(f4)
-            st.plotly_chart(f4, use_container_width=True)
+            st.plotly_chart(f4,     use_container_width=True, key="ded_waterfall")
             st.markdown("</div>", unsafe_allow_html=True)
         ded_total = gross - net
         st.markdown(f"""
@@ -542,7 +542,7 @@ with rev_tab:
             f5.update_layout(**bl(height=max(380, top_n*30), xaxis=dict(tickprefix="$", tickformat=",.0f"),
                                   yaxis=dict(autorange="reversed"), margin=dict(t=16,b=40,l=230,r=90)))
             sax(f5)
-            st.plotly_chart(f5, use_container_width=True)
+            st.plotly_chart(f5,     use_container_width=True, key="well_rank_rev")
             st.markdown("</div>", unsafe_allow_html=True)
         with st.expander("Full well-by-period detail"):
             ws2 = get_summary(dff)
@@ -573,7 +573,7 @@ with rev_tab:
         f6.update_xaxes(showgrid=False, showline=True, linecolor="#cdd2de", tickfont=tf2)
         f6.update_yaxes(title_text="BBL / MCF", showgrid=True, gridcolor=GRID, tickfont=tf2, secondary_y=False)
         f6.update_yaxes(title_text="GAL (Plant/NGL)", showgrid=False, tickfont=tf2, secondary_y=True)
-        st.plotly_chart(f6, use_container_width=True)
+        st.plotly_chart(f6,     use_container_width=True, key="volumes")
         st.markdown("</div>", unsafe_allow_html=True)
         with st.expander("Implied realized prices"):
             rp2 = (summary.groupby("Period").agg(Oil_Rev=("Oil_Gross","sum"), Oil_BBL=("Oil_BBL","sum"),
@@ -621,7 +621,7 @@ with exp_tab:
                             marker=dict(size=6, color="#111928", line=dict(color="#fff", width=1.5)))
             fe1.update_layout(**bl(barmode="stack", height=380, yaxis=dict(tickprefix="$", tickformat=",.0f")))
             sax(fe1)
-            st.plotly_chart(fe1, use_container_width=True)
+            st.plotly_chart(fe1,    use_container_width=True, key="exp_trend")
             st.markdown("</div>", unsafe_allow_html=True)
 
             # Summary tiles
@@ -687,7 +687,7 @@ with exp_tab:
                     fp1.update_layout(height=300, showlegend=False, paper_bgcolor=BG, margin=dict(t=8,b=8,l=16,r=16),
                         annotations=[dict(text=f"<b>{fmt(tot_sel)}</b>", x=0.5, y=0.5, showarrow=False,
                                           font=dict(family=PF, size=16, color="#111928"))])
-                    st.plotly_chart(fp1, use_container_width=True)
+                    st.plotly_chart(fp1,    use_container_width=True, key="exp_bucket_pie")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 with R2:
@@ -707,7 +707,7 @@ with exp_tab:
                     fp2.update_layout(**bl(height=300, xaxis=dict(tickprefix="$", tickformat=",.0f"),
                                           yaxis=dict(autorange="reversed"), margin=dict(t=8,b=32,l=200,r=80)))
                     sax(fp2)
-                    st.plotly_chart(fp2, use_container_width=True)
+                    st.plotly_chart(fp2,    use_container_width=True, key="exp_acct_bar")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                 # Full account table
@@ -767,7 +767,7 @@ with exp_tab:
                                         marker_color=BUCKET_COLORS[bk], marker_line_width=0)
                         fw1.update_layout(**bl(barmode="stack", height=300, yaxis=dict(tickprefix="$", tickformat=",.0f")))
                         sax(fw1)
-                        st.plotly_chart(fw1, use_container_width=True)
+                        st.plotly_chart(fw1,    use_container_width=True, key="well_exp_trend")
                         st.markdown("</div>", unsafe_allow_html=True)
 
                     # Account-level line items
@@ -791,7 +791,7 @@ with exp_tab:
                                           yaxis=dict(autorange="reversed"),
                                           margin=dict(t=8, b=32, l=260, r=90)))
                     sax(fw2)
-                    st.plotly_chart(fw2, use_container_width=True)
+                    st.plotly_chart(fw2,    use_container_width=True, key="well_line_items")
                     st.markdown("</div>", unsafe_allow_html=True)
 
                     with st.expander("Raw line-item table"):
@@ -835,7 +835,7 @@ with exp_tab:
                                           yaxis=dict(autorange="reversed"),
                                           margin=dict(t=16,b=40,l=230,r=90)))
                     sax(fw3)
-                    st.plotly_chart(fw3, use_container_width=True)
+                    st.plotly_chart(fw3,    use_container_width=True, key="exp_well_rank")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 with st.expander("Full well-by-period expense detail"):
@@ -913,7 +913,7 @@ with pl_tab:
         fp_main.update_layout(**bl(barmode="relative", height=420,
                                    yaxis=dict(tickprefix="$", tickformat=",.0f")))
         sax(fp_main)
-        st.plotly_chart(fp_main, use_container_width=True)
+        st.plotly_chart(fp_main,use_container_width=True, key="pl_main")
         st.markdown("</div>", unsafe_allow_html=True)
 
         # Net Less OpEx vs Net Less Capital side by side
@@ -931,7 +931,7 @@ with pl_tab:
             fp2.update_layout(**bl(height=280, yaxis=dict(tickprefix="$", tickformat=",.0f"),
                                    margin=dict(t=8, b=32, l=12, r=12)))
             sax(fp2)
-            st.plotly_chart(fp2, use_container_width=True)
+            st.plotly_chart(fp2, use_container_width=True, key="pl_net_less_opex")
             st.markdown("</div>", unsafe_allow_html=True)
 
         with R_pl:
@@ -947,7 +947,7 @@ with pl_tab:
             fp3.update_layout(**bl(height=280, yaxis=dict(tickprefix="$", tickformat=",.0f"),
                                    margin=dict(t=8, b=32, l=12, r=12)))
             sax(fp3)
-            st.plotly_chart(fp3, use_container_width=True)
+            st.plotly_chart(fp3,     use_container_width=True, key="pl_net_less_cap")
             st.markdown("</div>", unsafe_allow_html=True)
 
         with st.expander("Full monthly P&L table"):
@@ -1019,7 +1019,7 @@ with pl_tab:
                                          yaxis=dict(autorange="reversed"),
                                          margin=dict(t=8, b=32, l=220, r=90)))
                 sax(fw_top)
-                st.plotly_chart(fw_top, use_container_width=True)
+                st.plotly_chart(fw_top, use_container_width=True, key="pl_well_top")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with TR:
@@ -1037,7 +1037,7 @@ with pl_tab:
                                          yaxis=dict(autorange="reversed"),
                                          margin=dict(t=8, b=32, l=220, r=90)))
                 sax(fw_bot)
-                st.plotly_chart(fw_bot, use_container_width=True)
+                st.plotly_chart(fw_bot, use_container_width=True, key="pl_well_bot")
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with st.expander("Full well P&L table"):
@@ -1106,7 +1106,7 @@ with pl_tab:
                 fwf.update_layout(**bl(barmode="stack", height=440,
                                        yaxis=dict(tickprefix="$", tickformat=",.0f")))
                 sax(fwf)
-                st.plotly_chart(fwf, use_container_width=True)
+                st.plotly_chart(fwf,    use_container_width=True, key="pl_waterfall")
                 st.markdown("</div>", unsafe_allow_html=True)
 
                 # Summary row
