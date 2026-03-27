@@ -432,11 +432,11 @@ with rev_tab:
         st.plotly_chart(fw_bot, use_container_width=True, key="fw_bot_chart_1")
 st.plotly_chart(fw_bot, use_container_width=True, key="fw_bot_chart_2")
 st.markdown("</div>", unsafe_allow_html=True)
-        with st.expander("Data table"):
-            td = trend.copy()
-            for c in ["Oil","Gas","Plant","Deductions","Net"]:
-                td[c] = td[c].apply(lambda v: f"${v:,.0f}")
-            st.dataframe(td, use_container_width=True, hide_index=True)
+    with st.expander("Data table"):
+        td = trend.copy()
+        for c in ["Oil","Gas","Plant","Deductions","Net"]:
+            td[c] = td[c].apply(lambda v: f"${v:,.0f}")
+        st.dataframe(td, use_container_width=True, hide_index=True)
 
     # ── Tab 2: Commodity Mix ──────────────────────────────────────────────────
     with tab2:
