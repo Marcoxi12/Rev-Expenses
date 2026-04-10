@@ -366,6 +366,11 @@ MF = "JetBrains Mono, monospace"
 GRID = "#e8edf5"
 BG = "rgba(255,255,255,0.0)"
 
+# FIX #1: Define cache paths at module level for file deletion
+DATA_DIR = Path("data")
+CACHE_FILE = DATA_DIR / "gl_cache.parquet"
+META_FILE = DATA_DIR / "uploaded_files.json"
+
 C = {
     "blue": "#1d4ed8",
     "blue_fill": "rgba(29,78,216,0.10)",
@@ -512,13 +517,17 @@ def period_sort(values):
     return sorted(vals)
 
 
+# FIX #4: Updated expense_bucket_sum to use AmountAdj
 def expense_bucket_sum(exp_frame, bucket, period=None):
+    """Sum expenses by bucket, using AmountAdj (adjusted amount)."""
     if exp_frame is None or exp_frame.empty:
         return 0.0
     mask = exp_frame["Bucket"].eq(bucket)
     if period is not None:
         mask &= exp_frame["Period"].eq(period)
-    return float(exp_frame.loc[mask, "Amount"].sum())
+    # Use AmountAdj for consistency with P&L calculations
+    col = "AmountAdj" if "AmountAdj" in exp_frame.columns else "Amount"
+    return float(exp_frame.loc[mask, col].sum())
 
 
 def add_panel(title, sub, color="blue"):
@@ -572,10 +581,9 @@ with st.sidebar:
     # ── File Management ───────────────────────────────────────────────────────
     st.markdown('<div class="sb-section">Loaded Files</div>', unsafe_allow_html=True)
     
-    meta_file = Path("data/uploaded_files.json")
-    if meta_file.exists():
+    if META_FILE.exists():
         try:
-            meta = json.loads(meta_file.read_text())
+            meta = json.loads(META_FILE.read_text())
             files_list = meta.get("files", [])
             
             if files_list:
@@ -588,11 +596,15 @@ with st.sidebar:
                             f"Rows: {file_info.get('rows', 0):,} | Periods: {file_info.get('periods', 0)} | Wells: {file_info.get('wells', 0)}"
                         )
                     with col2:
+                        # FIX #1: File deletion now clears cache
                         if st.button("✕", key=f"del_{i}", help="Remove this file"):
-                            # Remove file from metadata
                             meta["files"].pop(i)
-                            meta_file.write_text(json.dumps(meta, indent=2))
-                            st.success("File removed")
+                            META_FILE.write_text(json.dumps(meta, indent=2))
+                            # CLEAR CACHE
+                            if CACHE_FILE.exists():
+                                CACHE_FILE.unlink()
+                            st.session_state["gl_app"] = {"df": None, "file_hashes": set()}
+                            st.success("File removed and cache cleared")
                             st.rerun()
             else:
                 st.caption("No files loaded yet")
@@ -607,6 +619,8 @@ with st.sidebar:
         st.stop()
 
     df = raw.copy()
+    
+    # FIX #2: Ensure derived columns exist BEFORE filtering
     df = ensure_columns(
         df,
         {
@@ -617,6 +631,8 @@ with st.sidebar:
             "Account": 0,
             "AccountDesc": "",
             "AmountAdj": 0.0,
+            "QtyAdj": 0.0,
+            "AcqCode": "Unknown",
         },
     )
 
@@ -626,10 +642,19 @@ with st.sidebar:
     df["Bucket"] = df["Bucket"].apply(normalize_str)
     if "AmountAdj" in df.columns:
         df["AmountAdj"] = pd.to_numeric(df["AmountAdj"], errors="coerce").fillna(0.0)
+    if "QtyAdj" in df.columns:
+        df["QtyAdj"] = pd.to_numeric(df["QtyAdj"], errors="coerce").fillna(0.0)
 
     st.markdown('<div class="sb-section">Company Selection</div>', unsafe_allow_html=True)
     
-    all_companies = ["40ACR", "FAEII"]
+    # FIX #7: Derive company list from data instead of hard-coding
+    if "Company" in df.columns:
+        all_companies = sorted([c for c in df["Company"].unique() if pd.notna(c) and str(c).strip() != ""])
+        if not all_companies:
+            all_companies = ["All"]
+    else:
+        all_companies = ["All"]
+    
     sel_companies = st.multiselect(
         "Companies",
         options=all_companies,
@@ -671,6 +696,23 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
+    # FIX #9: Add AcqCode filter
+    st.markdown('<div class="sb-section">Acquisition Code Filter</div>', unsafe_allow_html=True)
+    if "AcqCode" in df.columns:
+        all_acq_codes = sorted([c for c in df["AcqCode"].unique() if pd.notna(c) and str(c).strip() != ""])
+        if all_acq_codes:
+            sel_acq_codes = st.multiselect(
+                "Acq Codes",
+                options=all_acq_codes,
+                default=all_acq_codes,
+                placeholder="All codes",
+                label_visibility="collapsed",
+            )
+        else:
+            sel_acq_codes = []
+    else:
+        sel_acq_codes = []
+
     all_periods = period_sort(df["Period"].unique().tolist())
     st.markdown('<div class="sb-section">Period Range</div>', unsafe_allow_html=True)
 
@@ -698,8 +740,20 @@ if sel_subaccts:
     dff = dff[dff["SubAcctNum"].isin(sel_subaccts)]
 if sel_wells:
     dff = dff[dff["Well"].isin(sel_wells)]
+if sel_acq_codes:
+    dff = dff[dff["AcqCode"].isin(sel_acq_codes)]
+
+# FIX #3: Use datetime comparison for period range (robust)
 if period_range[0] and period_range[1]:
-    dff = dff[(dff["Period"] >= period_range[0]) & (dff["Period"] <= period_range[1])]
+    try:
+        dff["Period_dt"] = pd.to_datetime(dff["Period"], errors="coerce")
+        period_start = pd.to_datetime(period_range[0], errors="coerce")
+        period_end = pd.to_datetime(period_range[1], errors="coerce")
+        if pd.notna(period_start) and pd.notna(period_end):
+            dff = dff[(dff["Period_dt"] >= period_start) & (dff["Period_dt"] <= period_end)]
+        dff = dff.drop(columns=["Period_dt"], errors="ignore")
+    except Exception as e:
+        st.warning(f"Period filtering failed: {e}")
 
 summary = get_summary(dff)
 exp_summary = get_expense_summary(dff)
@@ -737,6 +791,7 @@ exp_summary = ensure_columns(
         "Well": "Unknown",
         "Bucket": "Unknown",
         "Amount": 0.0,
+        "AmountAdj": 0.0,
     },
 )
 
@@ -784,7 +839,7 @@ rev_period = (
 )
 
 exp_period = (
-    exp_summary.pivot_table(index="Period", columns="Bucket", values="Amount", aggfunc="sum", fill_value=0.0)
+    exp_summary.pivot_table(index="Period", columns="Bucket", values="AmountAdj" if "AmountAdj" in exp_summary.columns else "Amount", aggfunc="sum", fill_value=0.0)
     .reset_index()
     .sort_values("Period")
     if not exp_summary.empty
@@ -852,13 +907,14 @@ else:
     latest_boe = 0.0
     latest_loe_per_boe = 0.0
 
+# FIX #8: Validate period_label for None values
 period_label = (
     f"{period_range[0]} → {period_range[1]}"
-    if period_range[0] and period_range[1] and period_range[0] != period_range[1]
-    else (period_range[0] or "—")
+    if period_range[0] and period_range[1] and period_range[0] != period_range[1] and period_range[0] is not None
+    else (period_range[0] if period_range[0] is not None else "—")
 )
 portfolio_label = f"{selected_well_count} of {total_loaded_wells} wells" if sel_wells else f"All {dff['Well'].nunique()} wells"
-company_label = " + ".join(sel_companies) if sel_companies else "None"
+company_label = " + ".join(sel_companies) if sel_companies and sel_companies != ["All"] else "All"
 
 
 # =============================================================================
@@ -1452,8 +1508,14 @@ with tab_cost:
 
     with cost_t4:
         available_cost_wells = sorted(exp_summary["Well"].unique().tolist()) if not exp_summary.empty else []
+        
+        # FIX #6: Allow revenue-only P&L if no expenses exist
         if not available_cost_wells:
-            st.info("No expense data is available for well-level drilldown.")
+            st.info("No expense data available. Showing revenue wells instead:")
+            available_cost_wells = sorted(summary["Well"].unique().tolist()) if not summary.empty else []
+        
+        if not available_cost_wells:
+            st.warning("No well data available in selected filters.")
         else:
             left, right = st.columns([1, 4], gap="medium")
             with left:
@@ -1465,7 +1527,7 @@ with tab_cost:
                     detail_raw = detail_raw[detail_raw["Period"].eq(detail_period)]
 
                 if detail_raw.empty:
-                    st.info("No expense lines are available under the selected filters.")
+                    st.info(f"No expense detail for {detail_well}" + (f" in {detail_period}" if detail_period != "All periods" else ""))
                 else:
                     bucket_totals = detail_raw.groupby("Bucket", as_index=False)["AmountAdj"].sum()
                     total_well_cost = float(bucket_totals["AmountAdj"].sum())
@@ -1630,10 +1692,10 @@ with tab_pl:
                 gross_rev = float(well_data["Gross_Revenue"].sum())
                 total_ded = float(well_data["Total_Deductions"].sum())
                 net_rev = float(well_data["Net_Revenue"].sum())
-                loe = well_exp.loc[well_exp["Bucket"].eq("LOE"), "Amount"].sum() if not well_exp.empty else 0.0
-                workover = well_exp.loc[well_exp["Bucket"].eq("Workover"), "Amount"].sum() if not well_exp.empty else 0.0
-                leasehold = well_exp.loc[well_exp["Bucket"].eq("Leasehold"), "Amount"].sum() if not well_exp.empty else 0.0
-                capital = well_exp.loc[well_exp["Bucket"].eq("Capital"), "Amount"].sum() if not well_exp.empty else 0.0
+                loe = well_exp.loc[well_exp["Bucket"].eq("LOE"), "AmountAdj" if "AmountAdj" in well_exp.columns else "Amount"].sum() if not well_exp.empty else 0.0
+                workover = well_exp.loc[well_exp["Bucket"].eq("Workover"), "AmountAdj" if "AmountAdj" in well_exp.columns else "Amount"].sum() if not well_exp.empty else 0.0
+                leasehold = well_exp.loc[well_exp["Bucket"].eq("Leasehold"), "AmountAdj" if "AmountAdj" in well_exp.columns else "Amount"].sum() if not well_exp.empty else 0.0
+                capital = well_exp.loc[well_exp["Bucket"].eq("Capital"), "AmountAdj" if "AmountAdj" in well_exp.columns else "Amount"].sum() if not well_exp.empty else 0.0
                 
                 labels = ["Gross Revenue", "Deductions", "Net Revenue", "LOE", "Workover", "Leasehold", "Capital", "Net Income"]
                 values = [
@@ -1766,7 +1828,7 @@ with tab_pl:
             .agg(Net_Rev=("Net_Revenue", "sum"))
         )
         well_cost_piv = (
-            well_cost.pivot_table(index="Well", columns="Bucket", values="Amount", aggfunc="sum", fill_value=0.0)
+            well_cost.pivot_table(index="Well", columns="Bucket", values="AmountAdj" if "AmountAdj" in well_cost.columns else "Amount", aggfunc="sum", fill_value=0.0)
             .reset_index()
             if not well_cost.empty
             else pd.DataFrame(columns=["Well"])
@@ -1927,7 +1989,8 @@ with tab_pl:
             commentary.append(
                 f"Field EBITDA was {trend_dir} {abs(mom_pct(last_ebitda, prev_ebitda)):.1f}% versus {prev_period}."
             )
-        if not boe_frame.empty and not np.isnan(latest_loe_per_boe):
+        # FIX #5: Validate BOE/LOE_per_BOE before using in commentary
+        if not boe_frame.empty and not pd.isna(latest_loe_per_boe) and latest_loe_per_boe > 0:
             commentary.append(
                 f"Unit cost efficiency tracked at {fmt_currency(latest_loe_per_boe, 2)} per BOE in {last_period}."
             )
