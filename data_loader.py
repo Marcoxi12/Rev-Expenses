@@ -73,36 +73,55 @@ def _ss():
         try:
             if CACHE_FILE.exists():
                 cached = pd.read_parquet(CACHE_FILE)
-                _backfill(cached)
                 st.session_state["gl_app"]["df"] = cached
             if META_FILE.exists():
                 meta = json.loads(META_FILE.read_text())
                 st.session_state["gl_app"]["file_hashes"] = {f["hash"] for f in meta.get("files", [])}
-        except Exception:
-            pass
+        except Exception as e:
+            st.warning(f"⚠️ Cache load failed: {e}. Starting fresh.")
     return st.session_state["gl_app"]
-
-def _backfill(df):
-    if "SubAccount" not in df.columns:
-        df["SubAccount"] = ""
-    if "SubAcctNum" not in df.columns:
-        df["SubAcctNum"] = df["SubAccount"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
-    if "Well" not in df.columns and "SubAcctDesc" in df.columns:
-        df["Well"] = df["SubAcctDesc"].fillna("Unknown").astype(str).str.strip()
-    if "AcqCode" not in df.columns:
-        df["AcqCode"] = "Unknown"
-    if "Period" not in df.columns and "EffDate" in df.columns:
-        df["EffDate"] = pd.to_datetime(df["EffDate"], errors="coerce")
-        df["Period"] = df["EffDate"].dt.to_period("M").astype(str)
-    if "Bucket" not in df.columns and "Account" in df.columns:
-        df["Bucket"] = df["Account"].apply(lambda a: _expense_bucket(int(a)) if pd.notna(a) and _is_expense(int(a)) else "Revenue")
-    if "AccountDesc" not in df.columns:
-        df["AccountDesc"] = ""
 
 def _clean_col(name):
     return str(name).strip("{}").strip()
 
+def _ensure_derived_cols(df):
+    """Ensure all derived columns exist with proper values."""
+    if df.empty:
+        return df
+    
+    # SubAcctNum from SubAccount
+    if "SubAcctNum" not in df.columns:
+        df["SubAcctNum"] = df.get("SubAccount", "").astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
+    
+    # Well from SubAcctDesc
+    if "Well" not in df.columns:
+        df["Well"] = df.get("SubAcctDesc", "Unknown").fillna("Unknown").astype(str).str.strip()
+    
+    # Period from EffDate
+    if "Period" not in df.columns:
+        if "EffDate" in df.columns:
+            df["EffDate"] = pd.to_datetime(df["EffDate"], errors="coerce")
+            df["Period"] = df["EffDate"].dt.to_period("M").astype(str)
+        else:
+            df["Period"] = "Unknown"
+    
+    # Bucket based on Account type
+    if "Bucket" not in df.columns:
+        if "Account" in df.columns:
+            df["Bucket"] = df["Account"].apply(
+                lambda a: _expense_bucket(int(a)) if pd.notna(a) and _is_expense(int(a)) else "Revenue"
+            )
+        else:
+            df["Bucket"] = "Unknown"
+    
+    # AccountDesc
+    if "AccountDesc" not in df.columns:
+        df["AccountDesc"] = ""
+    
+    return df
+
 def _normalize(df):
+    """Parse and validate GL data, add derived columns."""
     # Strip {} from column names
     df = df.rename(columns={c: _clean_col(c) for c in df.columns})
 
@@ -121,10 +140,12 @@ def _normalize(df):
     if "AccountDesc" not in df.columns:
         df["AccountDesc"] = ""
 
+    # Validate required columns
     for req in ["EffDate", "Account", "SubAcctDesc", "Amount"]:
         if req not in df.columns:
             raise ValueError(f"Required column not found: '{req}'")
 
+    # Type coercion
     df["EffDate"]  = pd.to_datetime(df["EffDate"], errors="coerce")
     df["Account"]  = pd.to_numeric(df["Account"], errors="coerce").astype("Int64")
     df["Amount"]   = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0)
@@ -133,7 +154,7 @@ def _normalize(df):
     if "AcqCode" not in df.columns:
         df["AcqCode"] = "Unknown"
 
-    # Keep revenue AND expense accounts
+    # Filter to known GL accounts
     df = df[df["Account"].apply(lambda a: pd.notna(a) and (
         int(a) in ALL_REV_ACCTS or _is_expense(int(a))
     ))].copy()
@@ -141,6 +162,7 @@ def _normalize(df):
     if df.empty:
         return df
 
+    # Add derived columns
     df["Period"]    = df["EffDate"].dt.to_period("M").astype(str)
     df["Well"]      = df["SubAcctDesc"].fillna("Unknown").astype(str).str.strip()
     df["SubAcctNum"] = df["SubAccount"].astype(str).str.strip().replace("", "Unknown").fillna("Unknown")
@@ -160,6 +182,7 @@ def _normalize(df):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 def ingest_file(uploaded_file):
+    """Ingest a single GL file (CSV or Excel)."""
     file_bytes = uploaded_file.read()
     fhash = hashlib.md5(file_bytes).hexdigest()
     ss = _ss()
@@ -180,6 +203,9 @@ def ingest_file(uploaded_file):
     if new_df.empty:
         return {"status": "error", "message": "No recognized GL accounts found."}
 
+    # Ensure derived columns are present
+    new_df = _ensure_derived_cols(new_df)
+
     rows    = len(new_df)
     periods = new_df["Period"].nunique()
     wells   = new_df["Well"].nunique()
@@ -189,7 +215,7 @@ def ingest_file(uploaded_file):
     else:
         ss["df"] = (
             pd.concat([ss["df"], new_df], ignore_index=True)
-            .drop_duplicates(subset=["Period", "Account", "Well", "Amount"], keep="last")
+            .drop_duplicates(subset=["Period", "Account", "Well", "AmountAdj"], keep="last")
             .reset_index(drop=True)
         )
 
@@ -198,9 +224,14 @@ def ingest_file(uploaded_file):
     return {"status": "ok", "rows": rows, "months": periods, "wells": wells}
 
 def load_all_data():
-    return _ss()["df"]
+    """Return the full GL dataset."""
+    df = _ss()["df"]
+    if df is not None:
+        df = _ensure_derived_cols(df)
+    return df
 
 def _save_local(df, fhash, filename, rows, periods, wells):
+    """Persist cache and metadata."""
     try:
         DATA_DIR.mkdir(exist_ok=True)
         df.to_parquet(CACHE_FILE, index=False)
@@ -213,8 +244,8 @@ def _save_local(df, fhash, filename, rows, periods, wells):
             "rows": rows, "periods": periods, "wells": wells,
         })
         META_FILE.write_text(json.dumps(meta, indent=2))
-    except Exception:
-        pass
+    except Exception as e:
+        st.warning(f"⚠️ Cache write failed: {e}")
 
 # ── Revenue summary (unchanged) ───────────────────────────────────────────────
 def get_summary(df):
